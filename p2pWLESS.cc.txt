@@ -1,0 +1,126 @@
+#include "ns3/applications-module.h"
+#include "ns3/core-module.h"
+#include "ns3/internet-module.h"
+#include "ns3/network-module.h"
+#include "ns3/point-to-point-module.h"
+#include "ns3/csma-module.h"
+#include "ns3/mobility-module.h"
+#include "ns3/ssid.h"
+#include "ns3/yans-wifi-helper.h"
+#include "ns3/wifi-standards.h"
+#include "ns3/netanim-module.h"
+
+using namespace ns3;
+
+NS_LOG_COMPONENT_DEFINE("CustomExample");
+
+int
+main(int argc, char* argv[])
+{
+    //CommandLine cmd(FILE);
+    //cmd.Parse(argc, argv);
+
+    Time::SetResolution(Time::NS);
+    LogComponentEnable("UdpEchoClientApplication", LOG_LEVEL_INFO);
+    LogComponentEnable("UdpEchoServerApplication", LOG_LEVEL_INFO);
+    
+    // step-1 = creating group of nodes....
+    NodeContainer allNodes,nodes01,nodes23,nodes45,wifiStaNodes_homeWifi, wifiApNodes_homeWifi,wifiStaNodes_homeWifi1, wifiApNodes_homeWifi1;
+allNodes.Create(4);
+
+nodes01.Add(allNodes.Get(0));
+nodes01.Add(allNodes.Get(1));
+nodes23.Add(allNodes.Get(2));
+nodes23.Add(allNodes.Get(3));
+wifiApNodes_homeWifi.Add(allNodes.Get(2));
+wifiStaNodes_homeWifi.Add(allNodes.Get(1));
+
+
+// step-2 = create link
+PointToPointHelper p2pp2pLink1;
+p2pp2pLink1.SetDeviceAttribute("DataRate",StringValue("10MB/s"));
+p2pp2pLink1.SetChannelAttribute("Delay",StringValue("5ms"));
+
+YansWifiChannelHelper channel_homeWifi = YansWifiChannelHelper::Default();
+YansWifiPhyHelper phy_homeWifi;
+WifiMacHelper mac_homeWifi;
+WifiHelper wifi_homeWifi;
+Ssid ssid_homeWifi= Ssid("krishna");
+phy_homeWifi.SetChannel(channel_homeWifi.Create());
+wifi_homeWifi.SetStandard(WIFI_STANDARD_80211a);
+wifi_homeWifi.SetRemoteStationManager("ns3::ConstantRateWifiManager");
+
+ 
+ // step-3 = creating devices
+NetDeviceContainer  devices01, devices23, devices45;
+devices01 = p2pp2pLink1.Install(nodes01);
+devices23 = p2pp2pLink1.Install(nodes23);
+mac_homeWifi.SetType("ns3::ApWifiMac","Ssid",SsidValue(ssid_homeWifi));
+NetDeviceContainer apDev_homeWifi= wifi_homeWifi.Install(phy_homeWifi,mac_homeWifi,wifiApNodes_homeWifi);
+mac_homeWifi.SetType("ns3::StaWifiMac","Ssid",SsidValue(ssid_homeWifi));
+NetDeviceContainer staDev_homeWifi= wifi_homeWifi.Install(phy_homeWifi,mac_homeWifi,wifiStaNodes_homeWifi);
+
+MobilityHelper mobility;
+mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+mobility.Install(allNodes);
+
+// step-4 = Install ip stack
+InternetStackHelper stack;
+stack.Install(allNodes);
+
+// step-5 = Assignment of IP Address
+Ipv4AddressHelper address;
+
+
+address.SetBase("142.0.0.0","255.255.0.0");
+Ipv4InterfaceContainer interfaces01 = address.Assign(devices01);
+
+
+address.SetBase("143.0.0.0","255.255.0.0");
+Ipv4InterfaceContainer interfaces23 = address.Assign(devices23);
+
+
+address.SetBase("144.0.0.0","255.255.0.0");
+Ipv4InterfaceContainer interfaces45 = address.Assign(devices45);
+
+
+address.SetBase("145.0.0.0","255.255.0.0");
+Ipv4InterfaceContainer interfacesSta_homeWifi= address.Assign(staDev_homeWifi);
+Ipv4InterfaceContainer interfacesAp_homeWifi= address.Assign(apDev_homeWifi);
+
+
+
+
+// step-6 = server configuration
+UdpEchoServerHelper echoServer(9);
+
+ApplicationContainer serverApps = echoServer.Install(allNodes.Get(3));
+serverApps.Start(Seconds(1.0));
+serverApps.Stop(Seconds(11.0));
+
+// step-7 = client configuration
+UdpEchoClientHelper echoClient(interfaces23.GetAddress(1),9);
+echoClient.SetAttribute("MaxPackets", UintegerValue(1));
+echoClient.SetAttribute("Interval", TimeValue(Seconds(1.0)));
+echoClient.SetAttribute("PacketSize", UintegerValue(1024));
+
+ApplicationContainer clientApps = echoClient.Install(allNodes.Get(0));
+clientApps.Start(Seconds(2.0));
+clientApps.Stop(Seconds(11.0));
+
+Ipv4GlobalRoutingHelper::PopulateRoutingTables();
+
+AnimationInterface anim("21ce103.xml");
+
+anim.SetConstantPosition(allNodes.Get(0), 10.0, 10.0);
+anim.SetConstantPosition(allNodes.Get(1), 20.0, 10.0);
+anim.SetConstantPosition(allNodes.Get(2), 30.0, 10.0);
+anim.SetConstantPosition(allNodes.Get(3), 40.0, 10.0);
+
+p2pp2pLink1.EnablePcapAll("21ce103");
+phy_homeWifi.EnablePcap("21ce103", apDev_homeWifi.Get(0));
+
+    Simulator::Run();
+    Simulator::Destroy();
+    return 0;
+}

@@ -1,0 +1,101 @@
+#include "ns3/core-module.h"
+#include "ns3/network-module.h"
+#include "ns3/internet-module.h"
+#include "ns3/point-to-point-module.h"
+#include "ns3/applications-module.h"
+#include "ns3/netanim-module.h"
+
+using namespace ns3;
+
+NS_LOG_COMPONENT_DEFINE("ServerClientTopology");
+
+/* Network topology:
+ *
+ *     0
+ *    / \
+ *   /   \
+ *  1     2
+ *   \   /
+ *    \ /
+ *     3
+ *
+ * Nodes:
+ * 0 - Red (Server)
+ * 1, 2, 3 - Blue (Clients)
+ */
+
+int main(int argc, char *argv[]) {
+    //CommandLine cmd(FILE);
+    //cmd.Parse(argc, argv);
+
+    Time::SetResolution(Time::NS);
+    LogComponentEnable("UdpEchoClientApplication", LOG_LEVEL_INFO);
+    LogComponentEnable("UdpEchoServerApplication", LOG_LEVEL_INFO);
+
+    // Create nodes
+    NodeContainer nodes;
+    nodes.Create(4); // 1 server, 3 clients
+
+    // Create devices and channels
+    PointToPointHelper p2p;
+    p2p.SetDeviceAttribute("DataRate", StringValue("10Mbps"));
+    p2p.SetChannelAttribute("Delay", StringValue("2ms"));
+
+    // Create point-to-point links
+    NetDeviceContainer devices01 = p2p.Install(NodeContainer(nodes.Get(0), nodes.Get(1)));
+    NetDeviceContainer devices02 = p2p.Install(NodeContainer(nodes.Get(0), nodes.Get(2)));
+    NetDeviceContainer devices03 = p2p.Install(NodeContainer(nodes.Get(0), nodes.Get(3)));
+    NetDeviceContainer devices12 = p2p.Install(NodeContainer(nodes.Get(1), nodes.Get(2)));
+    NetDeviceContainer devices13 = p2p.Install(NodeContainer(nodes.Get(1), nodes.Get(3)));
+    NetDeviceContainer devices23 = p2p.Install(NodeContainer(nodes.Get(2), nodes.Get(3)));
+
+    // Create Internet stack
+    InternetStackHelper stack;
+    stack.Install(nodes);
+
+    // Assign IP addresses
+    Ipv4AddressHelper address;
+    address.SetBase("112.0.0.0", "255.255.255.0");
+    Ipv4InterfaceContainer interfaces01 = address.Assign(devices01);
+    address.SetBase("113.0.0.0", "255.255.255.0");
+    Ipv4InterfaceContainer interfaces02 = address.Assign(devices02);
+    address.SetBase("114.0.0.0", "255.255.255.0");
+    Ipv4InterfaceContainer interfaces03 = address.Assign(devices03);
+    address.SetBase("115.0.0.0", "255.255.255.0");
+    Ipv4InterfaceContainer interfaces12 = address.Assign(devices12);
+    address.SetBase("116.0.0.0", "255.255.255.0");
+    Ipv4InterfaceContainer interfaces13 = address.Assign(devices13);
+    address.SetBase("117.0.0.0", "255.255.255.0");
+    Ipv4InterfaceContainer interfaces23 = address.Assign(devices23);
+
+    // Setup server and client applications
+    UdpEchoServerHelper echoServer(9);
+    ApplicationContainer serverApps = echoServer.Install(nodes.Get(3)); // Server on node 0
+    serverApps.Start(Seconds(1.0));
+    serverApps.Stop(Seconds(10.0));
+
+    UdpEchoClientHelper echoClient(interfaces03.GetAddress(1), 9); // Client on node 1
+    echoClient.SetAttribute("MaxPackets", UintegerValue(1));
+    echoClient.SetAttribute("Interval", TimeValue(Seconds(1.0)));
+    echoClient.SetAttribute("PacketSize", UintegerValue(1024));
+    
+    Ipv4GlobalRoutingHelper::PopulateRoutingTables();
+    
+    ApplicationContainer clientApps3 = echoClient.Install(nodes.Get(0));
+    clientApps3.Start(Seconds(2.0));
+    clientApps3.Stop(Seconds(10.0));
+    
+    AnimationInterface anim("pract3.xml");
+    
+    anim.SetConstantPosition(nodes.Get(0), 10.0, 10.0);
+    anim.SetConstantPosition(nodes.Get(1), 10.0, 40.0);
+    anim.SetConstantPosition(nodes.Get(2), 40.0, 10.0);
+    anim.SetConstantPosition(nodes.Get(3), 40.0, 40.0);
+    
+    p2p.EnablePcapAll("pract3_21ce112_091");
+
+    Simulator::Run();
+    Simulator::Destroy();
+
+    return 0;
+}
